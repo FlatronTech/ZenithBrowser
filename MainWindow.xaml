@@ -1,0 +1,1240 @@
+<Window x:Class="Zenith.App.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
+        Title="{Binding CurrentTitle, StringFormat='{}{0} - Zenith'}"
+        Height="768" Width="1280"
+        WindowStartupLocation="CenterScreen"
+        Background="#F2F2F2"
+        FontFamily="Segoe UI"
+        KeyDown="Window_KeyDown"
+        StateChanged="Window_StateChanged"
+        PreviewMouseDown="Window_PreviewMouseDown"
+        MinWidth="600" MinHeight="400">
+
+    <Window.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="pack://application:,,,/Zenith;component/Themes/EdgeTheme.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+
+            <!-- ── Tab open animation: width expand from 0 → natural ── -->
+            <Style x:Key="AnimatedTabContainerStyle" TargetType="ContentPresenter">
+                <Setter Property="Width" Value="0" />
+            </Style>
+
+            <!-- Edge 1507 Menu Style (matching dropdown.png) -->
+            <Style x:Key="EdgeMenuItemStyle" TargetType="MenuItem">
+                <Setter Property="Height" Value="36" />
+                <Setter Property="FontSize" Value="13" />
+                <Setter Property="FontFamily" Value="Segoe UI" />
+                <Setter Property="Foreground" Value="{StaticResource TextPrimary}" />
+                <Setter Property="Padding" Value="14,0,14,0" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="MenuItem">
+                            <Border x:Name="Bd" Background="Transparent" Padding="{TemplateBinding Padding}">
+                                <ContentPresenter ContentSource="Header" VerticalAlignment="Center" />
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsHighlighted" Value="True">
+                                    <Setter TargetName="Bd" Property="Background" Value="#E5E5E5" />
+                                </Trigger>
+                                <Trigger Property="IsEnabled" Value="False">
+                                    <Setter Property="Foreground" Value="#A0A0A0" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <!-- Flat gray button style for Settings (Choose what to clear, etc.) -->
+            <Style x:Key="EdgeGrayButtonStyle" TargetType="Button">
+                <Setter Property="Background" Value="#CCCCCC" />
+                <Setter Property="Foreground" Value="#000000" />
+                <Setter Property="BorderThickness" Value="0" />
+                <Setter Property="Padding" Value="14,6" />
+                <Setter Property="FontSize" Value="12" />
+                <Setter Property="FontFamily" Value="Segoe UI" />
+                <Setter Property="Cursor" Value="Hand" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="Bd" Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="Bd" Property="Background" Value="#BDBDBD" />
+                                </Trigger>
+                                <Trigger Property="IsPressed" Value="True">
+                                    <Setter TargetName="Bd" Property="Background" Value="#AAAAAA" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <!-- Blue link button style (Clear all, Open folder, etc.) -->
+            <Style x:Key="EdgeLinkButtonStyle" TargetType="Button">
+                <Setter Property="Background" Value="Transparent" />
+                <Setter Property="Foreground" Value="{StaticResource AccentBrush}" />
+                <Setter Property="BorderThickness" Value="0" />
+                <Setter Property="FontSize" Value="12" />
+                <Setter Property="FontFamily" Value="Segoe UI" />
+                <Setter Property="Cursor" Value="Hand" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="Button">
+                            <ContentPresenter VerticalAlignment="Center" />
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <!-- Hub Top Icon Tab Button -->
+            <Style x:Key="HubTabButtonStyle" TargetType="RadioButton">
+                <Setter Property="Background" Value="Transparent" />
+                <Setter Property="Foreground" Value="#555555" />
+                <Setter Property="Height" Value="42" />
+                <Setter Property="Width" Value="54" />
+                <Setter Property="Cursor" Value="Hand" />
+                <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="RadioButton">
+                            <Grid Background="Transparent">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                <Border x:Name="Indicator" Height="2" Background="{StaticResource AccentBrush}"
+                                        VerticalAlignment="Bottom" Visibility="Collapsed" />
+                            </Grid>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter Property="Foreground" Value="#000000" />
+                                </Trigger>
+                                <Trigger Property="IsChecked" Value="True">
+                                    <Setter Property="Foreground" Value="{StaticResource AccentBrush}" />
+                                    <Setter TargetName="Indicator" Property="Visibility" Value="Visible" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+        </ResourceDictionary>
+    </Window.Resources>
+
+    <!-- WindowChrome: seamlessly integrates custom title bar -->
+    <shell:WindowChrome.WindowChrome>
+        <shell:WindowChrome CaptionHeight="32"
+                            ResizeBorderThickness="6"
+                            GlassFrameThickness="0"
+                            CornerRadius="0"
+                            NonClientFrameEdges="None"
+                            UseAeroCaptionButtons="False" />
+    </shell:WindowChrome.WindowChrome>
+
+    <Border x:Name="WindowBorder"
+            BorderBrush="#707070"
+            BorderThickness="1"
+            CornerRadius="0"
+            SnapsToDevicePixels="True">
+        <Grid x:Name="RootGrid">
+            <Grid.RowDefinitions>
+                <!-- R0: Title bar / Tab strip (Height 32px matching startpage.png) -->
+                <RowDefinition Height="32" />
+                <!-- R1: Navigation toolbar (Height 42px) -->
+                <RowDefinition Height="42" />
+                <!-- R2: Favorites bar (hidden by default) -->
+                <RowDefinition x:Name="FavoritesBarRow" Height="0" />
+                <!-- R3: Viewport (Browser + Side Panes) -->
+                <RowDefinition Height="*" />
+                <!-- R4: Status bar -->
+                <RowDefinition Height="22" />
+            </Grid.RowDefinitions>
+
+            <!-- ════════════════════════════════════════════════════════
+                 ROW 0 — Tab Bar (matching startpage.png: gray #CCCCCC title bar, flat tabs)
+            ════════════════════════════════════════════════════════ -->
+            <Grid Grid.Row="0" Background="{StaticResource TabBarBg}" PreviewMouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />     <!-- Tabs + New tab (+) -->
+                    <ColumnDefinition Width="Auto" />  <!-- Minimize, Maximize, Close -->
+                </Grid.ColumnDefinitions>
+
+                <!-- Tabs + New Tab (+) -->
+                <ScrollViewer Grid.Column="0"
+                              HorizontalScrollBarVisibility="Hidden"
+                              VerticalScrollBarVisibility="Disabled"
+                              Focusable="False"
+                              HorizontalAlignment="Left"
+                              VerticalAlignment="Bottom"
+                              Height="32"
+                              ClipToBounds="True">
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Bottom" Height="32" ClipToBounds="True">
+                        <!-- Tab Items -->
+                        <ItemsControl x:Name="TabsControl" ItemsSource="{Binding Tabs}" Height="32" ClipToBounds="True">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Bottom" Height="32" ClipToBounds="True" />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <RadioButton Style="{StaticResource TabButtonStyle}"
+                                                 IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                                                 Click="Tab_Click" />
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <!-- New Tab (+) button matching startpage.png: flat rectangle 32x32px -->
+                        <Button Width="32" Height="32"
+                                Background="#CCCCCC"
+                                BorderThickness="0"
+                                FontFamily="Segoe MDL2 Assets"
+                                FontSize="12"
+                                Content="&#xE710;"
+                                Foreground="#434343"
+                                ToolTip="New tab (Ctrl+T)"
+                                Click="NewTab_Click"
+                                VerticalAlignment="Bottom"
+                                shell:WindowChrome.IsHitTestVisibleInChrome="True">
+                            <Button.Template>
+                                <ControlTemplate TargetType="Button">
+                                    <Border x:Name="Bd" Background="{TemplateBinding Background}">
+                                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                    </Border>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter TargetName="Bd" Property="Background" Value="#BFBFBF" />
+                                        </Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </Button.Template>
+                        </Button>
+                    </StackPanel>
+                </ScrollViewer>
+
+            <!-- Window Caption Buttons (top right, 32px height) -->
+            <StackPanel Grid.Column="1"
+                        Orientation="Horizontal"
+                        VerticalAlignment="Top"
+                        HorizontalAlignment="Right"
+                        shell:WindowChrome.IsHitTestVisibleInChrome="True">
+                <!-- Minimize -->
+                <Button x:Name="BtnMinimize"
+                        Width="46" Height="32"
+                        Background="Transparent"
+                        BorderThickness="0"
+                        FontFamily="Segoe MDL2 Assets"
+                        FontSize="10"
+                        Content="&#xE921;"
+                        Foreground="{StaticResource TextPrimary}"
+                        ToolTip="Minimize"
+                        Click="BtnMinimize_Click">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="Bd" Background="{TemplateBinding Background}">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="Bd" Property="Background" Value="#BDBDBD" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Button.Template>
+                </Button>
+
+                <!-- Maximize / Restore -->
+                <Button x:Name="BtnMaximize"
+                        Width="46" Height="32"
+                        Background="Transparent"
+                        BorderThickness="0"
+                        FontFamily="Segoe MDL2 Assets"
+                        FontSize="10"
+                        Content="&#xE922;"
+                        Foreground="{StaticResource TextPrimary}"
+                        ToolTip="Maximize"
+                        Click="BtnMaximize_Click">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="Bd" Background="{TemplateBinding Background}">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="Bd" Property="Background" Value="#BDBDBD" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Button.Template>
+                </Button>
+
+                <!-- Close -->
+                <Button Width="46" Height="32"
+                        Background="Transparent"
+                        BorderThickness="0"
+                        FontFamily="Segoe MDL2 Assets"
+                        FontSize="10"
+                        Content="&#xE8BB;"
+                        Foreground="{StaticResource TextPrimary}"
+                        ToolTip="Close"
+                        Click="BtnClose_Click">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="Bd" Background="{TemplateBinding Background}">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="Bd" Property="Background" Value="#C42B1C" />
+                                    <Setter Property="Foreground" Value="White" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Button.Template>
+                </Button>
+            </StackPanel>
+        </Grid>
+
+        <!-- ════════════════════════════════════════════════════════
+             ROW 1 — Navigation Toolbar (Height 42px, Background #F2F2F2)
+        ════════════════════════════════════════════════════════ -->
+        <Border Grid.Row="1"
+                Background="{StaticResource ToolbarBg}"
+                BorderBrush="{StaticResource ToolbarBorderBrush}"
+                BorderThickness="0,0,0,1">
+            <Grid Margin="2,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />   <!-- Back / Forward / Refresh -->
+                    <ColumnDefinition Width="*"    />   <!-- Address Bar (hidden on start page) -->
+                    <ColumnDefinition Width="Auto" />   <!-- Hub / Web Note / Share / More -->
+                </Grid.ColumnDefinitions>
+
+                <!-- Back / Forward / Refresh -->
+                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button x:Name="BtnBack"
+                            Style="{StaticResource NavButtonStyle}"
+                            IsEnabled="{Binding SelectedTab.CanGoBack}"
+                            ToolTip="Back (Alt+Left)"
+                            Click="BtnBack_Click">
+                        <TextBlock Text="&#xE72B;" FontFamily="Segoe MDL2 Assets" FontSize="14" />
+                    </Button>
+
+                    <Button x:Name="BtnForward"
+                            Style="{StaticResource NavButtonStyle}"
+                            IsEnabled="{Binding SelectedTab.CanGoForward}"
+                            ToolTip="Forward (Alt+Right)"
+                            Click="BtnForward_Click">
+                        <TextBlock Text="&#xE72A;" FontFamily="Segoe MDL2 Assets" FontSize="14" />
+                    </Button>
+
+                    <Button x:Name="BtnRefresh"
+                            Style="{StaticResource NavButtonStyle}"
+                            ToolTip="Refresh (F5)"
+                            Click="BtnRefresh_Click">
+                        <TextBlock x:Name="RefreshIcon"
+                                   Text="&#xE72C;"
+                                   FontFamily="Segoe MDL2 Assets"
+                                   FontSize="14" />
+                    </Button>
+                </StackPanel>
+
+                <!-- Center: Address Bar (HIDDEN when on startpage, matching startpage.png!) -->
+                <Grid Grid.Column="1" Margin="6,5">
+                    <!-- Invisible click target on Start Page: clicking it reveals address bar and clears start page -->
+                    <Border x:Name="StartPageAddressBarPlaceholder"
+                            Background="Transparent"
+                            Cursor="IBeam"
+                            PreviewMouseLeftButtonDown="StartPageAddressBarPlaceholder_MouseDown"
+                            Visibility="Collapsed" />
+
+                    <Grid x:Name="AddressBarContainer">
+                        <!-- Security / Page Info lock icon button matching The HTTPS-HTTP indicator and dropdown after pressing.png -->
+                    <Button x:Name="BtnSecurity"
+                            Width="26" Height="26"
+                            Background="Transparent"
+                            BorderThickness="0"
+                            HorizontalAlignment="Left"
+                            VerticalAlignment="Center"
+                            Margin="3,0,0,0"
+                            Panel.ZIndex="2"
+                            Cursor="Hand"
+                            ToolTip="Website identification"
+                            Click="BtnSecurity_Click">
+                        <Button.Template>
+                            <ControlTemplate TargetType="Button">
+                                <Border x:Name="Bd" Background="Transparent">
+                                    <TextBlock x:Name="SecurityIcon"
+                                               Text="&#xE72E;"
+                                               FontFamily="Segoe MDL2 Assets"
+                                               FontSize="12"
+                                               Foreground="#555555"
+                                               HorizontalAlignment="Center"
+                                               VerticalAlignment="Center" />
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter TargetName="Bd" Property="Background" Value="#E0E0E0" />
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Button.Template>
+                    </Button>
+
+                    <!-- Website Identification / Security Flyout Dropdown -->
+                    <Popup x:Name="SecurityPopup"
+                           PlacementTarget="{Binding ElementName=BtnSecurity}"
+                           Placement="Bottom"
+                           HorizontalOffset="-2"
+                           VerticalOffset="4"
+                           StaysOpen="False"
+                           AllowsTransparency="True">
+                        <Border x:Name="SecurityBorder"
+                                Width="370"
+                                Background="#F2F2F2"
+                                BorderBrush="#707070"
+                                BorderThickness="1"
+                                CornerRadius="0"
+                                SnapsToDevicePixels="True"
+                                ClipToBounds="True"
+                                Padding="17,16,18,19">
+                            <Border.Effect>
+                                <DropShadowEffect BlurRadius="12" Direction="270" ShadowDepth="3" Opacity="0.22" Color="#000000" />
+                            </Border.Effect>
+                            <StackPanel>
+                                <TextBlock Text="Website identification"
+                                           FontFamily="Segoe UI"
+                                           FontWeight="SemiBold"
+                                           FontSize="13.5"
+                                           Foreground="#000000"
+                                           Margin="0,0,0,12" />
+
+                                <TextBlock x:Name="SecurityCertAuthorityText"
+                                           Text="GlobalSign Root CA has verified that you are connected to"
+                                           FontFamily="Segoe UI"
+                                           FontSize="12"
+                                           Foreground="#000000"
+                                           TextWrapping="Wrap"
+                                           Margin="0,0,0,6" />
+
+                                <TextBlock x:Name="SecurityDomainText"
+                                           Text="www.google.com"
+                                           FontFamily="Segoe UI"
+                                           FontWeight="Bold"
+                                           FontSize="13.5"
+                                           Foreground="#000000"
+                                           Margin="0,0,0,12" />
+
+                                <TextBlock x:Name="SecurityEncryptionText"
+                                           Text="Your connection to this site is encrypted to prevent snooping."
+                                           FontFamily="Segoe UI"
+                                           FontSize="12"
+                                           Foreground="#000000"
+                                           TextWrapping="Wrap"
+                                           Margin="0,0,0,14" />
+
+                                <Button x:Name="BtnShowCertDetails"
+                                        Style="{StaticResource EdgeLinkButtonStyle}"
+                                        HorizontalAlignment="Left"
+                                        Click="BtnShowCertDetails_Click">
+                                    <TextBlock x:Name="SecurityCertLinkText"
+                                               Text="Show certificate details"
+                                               FontSize="12"
+                                               TextDecorations="Underline"
+                                               Foreground="{StaticResource AccentBrush}" />
+                                </Button>
+                            </StackPanel>
+                        </Border>
+                    </Popup>
+
+                    <!-- Address Input Box -->
+                    <TextBox x:Name="AddressBox"
+                             Style="{StaticResource AddressBoxStyle}"
+                             Text="{Binding SelectedTab.DisplayUrl, Mode=OneWay}"
+                             KeyDown="AddressBox_KeyDown"
+                             GotFocus="AddressBox_GotFocus"
+                             LostFocus="AddressBox_LostFocus"
+                             Padding="28,0,4,0"
+                             Height="32" />
+
+                    <!-- Placeholder text -->
+                    <TextBlock Text="Search or enter web address"
+                               Foreground="{StaticResource TextMuted}"
+                               VerticalAlignment="Center"
+                               Margin="28,0,0,0"
+                               IsHitTestVisible="False"
+                               FontSize="13"
+                               FontFamily="Segoe UI">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                                <Style.Triggers>
+                                    <MultiDataTrigger>
+                                        <MultiDataTrigger.Conditions>
+                                            <Condition Binding="{Binding Text, ElementName=AddressBox}" Value="" />
+                                            <Condition Binding="{Binding IsFocused, ElementName=AddressBox}" Value="False" />
+                                        </MultiDataTrigger.Conditions>
+                                        <Setter Property="Visibility" Value="Visible" />
+                                    </MultiDataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                </Grid>
+            </Grid>
+
+                <!-- Right Action Buttons: Hub, Web Note, Share, More -->
+                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                    <!-- Hub Button with active blue bottom underline indicator matching history.png -->
+                    <Grid>
+                        <Button x:Name="BtnHub"
+                                Style="{StaticResource NavButtonStyle}"
+                                ToolTip="Hub (Favorites, Reading list, History, Downloads, Extensions)"
+                                Click="BtnHub_Click">
+                            <TextBlock x:Name="HubIconText" Text="&#xE8A4;" FontFamily="Segoe MDL2 Assets" FontSize="15" />
+                        </Button>
+                        <Border x:Name="HubActiveIndicator"
+                                Height="2" Background="{StaticResource AccentBrush}"
+                                VerticalAlignment="Bottom" Visibility="Collapsed" />
+                    </Grid>
+
+                    <Button Style="{StaticResource NavButtonStyle}"
+                            ToolTip="Make a Web Note"
+                            Click="BtnWebNote_Click">
+                        <TextBlock Text="&#xE70F;" FontFamily="Segoe MDL2 Assets" FontSize="14" />
+                    </Button>
+
+                    <Button Style="{StaticResource NavButtonStyle}"
+                            ToolTip="Share this page"
+                            Click="BtnShare_Click">
+                        <TextBlock Text="&#xE72D;" FontFamily="Segoe MDL2 Assets" FontSize="14" />
+                    </Button>
+
+                    <!-- More (...) Button -->
+                    <Button x:Name="BtnMore"
+                            Style="{StaticResource NavButtonStyle}"
+                            ToolTip="Settings and more"
+                            Click="BtnMore_Click">
+                        <TextBlock Text="&#xE712;" FontFamily="Segoe MDL2 Assets" FontSize="14" />
+                    </Button>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- ════════════════════════════════════════════════════════
+             ROW 2 — Favorites Bar (Edge 1507 style)
+        ════════════════════════════════════════════════════════ -->
+        <Border x:Name="FavoritesBar" Grid.Row="2" Grid.ColumnSpan="2"
+                Background="#F2F2F2" BorderBrush="#C0C0C0" BorderThickness="0,0,0,1"
+                Height="32" Visibility="Collapsed" Padding="4,0">
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                <TextBlock x:Name="FavBarEmpty" Text="Add your favorite sites here"
+                           FontSize="12" Foreground="#767676" VerticalAlignment="Center" Margin="8,0,0,0" />
+            </StackPanel>
+        </Border>
+
+        <!-- ════════════════════════════════════════════════════════
+             ROW 3 — Viewport: Web Browser + Hub Pane + Settings Pane
+        ════════════════════════════════════════════════════════ -->
+        <Grid Grid.Row="3">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />     <!-- Browser -->
+                <ColumnDefinition Width="0" x:Name="SidePaneColumn" />  <!-- Side Pane (Hub or Settings when pinned) -->
+            </Grid.ColumnDefinitions>
+
+            <!-- Web Browser Viewport Container -->
+            <Grid Grid.Column="0" x:Name="BrowserContainer" Background="#F2F2F2" ClipToBounds="True" />
+
+            <!-- ── EDGE 1507 DOWNLOAD NOTIFICATION BAR (matching download started.png & download finished.png) ── -->
+            <!-- Centered floating bottom bar with authentic 860px width, clean 1px border and drop shadow -->
+            <Border x:Name="DownloadBar"
+                    Grid.Column="0"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Bottom"
+                    Width="860"
+                    Background="#F2F2F2"
+                    BorderBrush="{StaticResource AccentBrush}"
+                    BorderThickness="1,1,1,0"
+                    Visibility="Collapsed"
+                    Panel.ZIndex="90">
+                <Border.Effect>
+                    <DropShadowEffect BlurRadius="12" Direction="90" ShadowDepth="3" Opacity="0.18" Color="#000000" />
+                </Border.Effect>
+
+                <!-- Main Bar Content (Height 52px) -->
+                <Grid Height="52" Margin="24,0,16,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />     <!-- Download info text -->
+                        <ColumnDefinition Width="Auto" />  <!-- Action buttons -->
+                        <ColumnDefinition Width="Auto" />  <!-- Close button -->
+                    </Grid.ColumnDefinitions>
+
+                    <!-- Left Info -->
+                    <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,16,0">
+                        <TextBlock x:Name="DownloadBarTitleText"
+                                   FontFamily="Segoe UI"
+                                   FontSize="12"
+                                   Foreground="#000000"
+                                   TextTrimming="CharacterEllipsis" />
+                        <TextBlock x:Name="DownloadBarSubText"
+                                   FontFamily="Segoe UI"
+                                   FontSize="11"
+                                   Foreground="#767676"
+                                   Margin="0,2,0,0" />
+                    </StackPanel>
+
+                    <!-- Right Actions -->
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="8,0,12,0">
+                        <!-- In Progress: Pause / Resume Button -->
+                        <Button x:Name="BtnDownloadPause"
+                                Style="{StaticResource EdgeGrayButtonStyle}"
+                                Content="Pause"
+                                Width="84" Height="28"
+                                Margin="0,0,8,0"
+                                Click="BtnDownloadPause_Click" />
+
+                        <!-- In Progress: Cancel Button -->
+                        <Button x:Name="BtnDownloadCancel"
+                                Style="{StaticResource EdgeGrayButtonStyle}"
+                                Content="Cancel"
+                                Width="84" Height="28"
+                                Margin="0,0,8,0"
+                                Click="BtnDownloadCancel_Click" />
+
+                        <!-- Finished: Run / Open Button -->
+                        <Button x:Name="BtnDownloadRun"
+                                Style="{StaticResource EdgeGrayButtonStyle}"
+                                Content="Run"
+                                Width="84" Height="28"
+                                Margin="0,0,8,0"
+                                Visibility="Collapsed"
+                                Click="BtnDownloadRun_Click" />
+
+                        <!-- Finished: View downloads Button (opens Downloads tab in Hub!) -->
+                        <Button x:Name="BtnDownloadView"
+                                Style="{StaticResource EdgeGrayButtonStyle}"
+                                Content="View downloads"
+                                Padding="14,0" Height="28"
+                                Margin="0,0,8,0"
+                                Visibility="Collapsed"
+                                Click="BtnDownloadView_Click" />
+                    </StackPanel>
+
+                    <!-- Far Right: Close ✕ Button -->
+                    <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                        <Button x:Name="BtnCloseDownloadBar"
+                                Width="32" Height="32"
+                                Background="Transparent"
+                                BorderThickness="0"
+                                ToolTip="Close"
+                                Click="BtnCloseDownloadBar_Click">
+                            <TextBlock Text="&#xE8BB;" FontFamily="Segoe MDL2 Assets" FontSize="10" Foreground="#000000" />
+                        </Button>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- ── HUB SIDE PANE matching history.png and downloads tab.png ── -->
+            <Border x:Name="HubPane"
+                    Grid.Column="0"
+                    Grid.ColumnSpan="2"
+                    HorizontalAlignment="Right"
+                    Panel.ZIndex="100"
+                    Width="360"
+                    Background="{StaticResource SidePaneBg}"
+                    BorderBrush="{StaticResource ToolbarBorderBrush}"
+                    BorderThickness="1,0,0,0"
+                    Visibility="Collapsed">
+                <Border.RenderTransform>
+                    <TranslateTransform x:Name="HubPaneTranslate" X="360" />
+                </Border.RenderTransform>
+                <Border.Effect>
+                    <DropShadowEffect x:Name="HubShadow" BlurRadius="14" Direction="270" ShadowDepth="2" Opacity="0.2" Color="#000000" />
+                </Border.Effect>
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="42" />  <!-- 4 Icon Tabs + Pin button -->
+                        <RowDefinition Height="*" />   <!-- Tab Content -->
+                    </Grid.RowDefinitions>
+
+                    <!-- Top 4 Icon Tabs + Pin matching history.png & downloads tab.png -->
+                    <Border Grid.Row="0" BorderBrush="{StaticResource ToolbarBorderBrush}" BorderThickness="0,0,0,1">
+                        <Grid>
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Left">
+                                <!-- Favorites -->
+                                <RadioButton x:Name="TabHubFavorites" Style="{StaticResource HubTabButtonStyle}"
+                                             ToolTip="Favorites" Click="HubTab_Click">
+                                    <TextBlock Text="&#xE734;" FontFamily="Segoe MDL2 Assets" FontSize="16" />
+                                </RadioButton>
+
+                                <!-- Reading list -->
+                                <RadioButton x:Name="TabHubReading" Style="{StaticResource HubTabButtonStyle}"
+                                             ToolTip="Reading list" Click="HubTab_Click">
+                                    <TextBlock Text="&#xE8FD;" FontFamily="Segoe MDL2 Assets" FontSize="16" />
+                                </RadioButton>
+
+                                <!-- History (selected by default) -->
+                                <RadioButton x:Name="TabHubHistory" Style="{StaticResource HubTabButtonStyle}"
+                                             IsChecked="True" ToolTip="History" Click="HubTab_Click">
+                                    <TextBlock Text="&#xE81C;" FontFamily="Segoe MDL2 Assets" FontSize="16" />
+                                </RadioButton>
+
+                                <!-- Downloads -->
+                                <RadioButton x:Name="TabHubDownloads" Style="{StaticResource HubTabButtonStyle}"
+                                             ToolTip="Downloads" Click="HubTab_Click">
+                                    <TextBlock Text="&#xE896;" FontFamily="Segoe MDL2 Assets" FontSize="16" />
+                                </RadioButton>
+
+                                <!-- Extensions -->
+                                <RadioButton x:Name="TabHubExtensions" Style="{StaticResource HubTabButtonStyle}"
+                                             ToolTip="Extensions" Click="HubTab_Click">
+                                    <TextBlock Text="&#xE74C;" FontFamily="Segoe MDL2 Assets" FontSize="16" />
+                                </RadioButton>
+                            </StackPanel>
+
+                            <!-- Pin button on far right -->
+                            <Button x:Name="BtnPinHub" Style="{StaticResource NavButtonStyle}" Width="36" Height="36"
+                                    HorizontalAlignment="Right" Margin="0,0,4,0" ToolTip="Pin pane"
+                                    Click="PinHub_Click">
+                                <TextBlock x:Name="PinHubIcon" Text="&#xE718;" FontFamily="Segoe MDL2 Assets" FontSize="13" Foreground="#555555" />
+                            </Button>
+                        </Grid>
+                    </Border>
+
+                    <!-- Content of active Hub Tab (clipped for horizontal slide transitions) -->
+                    <Grid Grid.Row="1" ClipToBounds="True">
+                        <!-- 1. HISTORY VIEW matching history.png -->
+                        <Grid x:Name="HubHistoryView" Visibility="Visible" Margin="14,12">
+                            <Grid.RenderTransform>
+                                <TranslateTransform x:Name="HubHistoryTranslate" X="0" />
+                            </Grid.RenderTransform>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" /> <!-- HISTORY header & Clear link -->
+                                <RowDefinition Height="*" />    <!-- Grouped history list -->
+                            </Grid.RowDefinitions>
+
+                            <Grid Grid.Row="0" Margin="0,0,0,14">
+                                <TextBlock x:Name="HubHistoryHeader" Text="HISTORY" FontWeight="Bold" FontSize="13" Foreground="#000000" VerticalAlignment="Center" />
+                                <Button Style="{StaticResource EdgeLinkButtonStyle}" Content="Clear all history"
+                                        HorizontalAlignment="Right" Click="ClearHistory_Click" />
+                            </Grid>
+
+                            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                                <StackPanel>
+                                    <!-- Group: Last hour -->
+                                    <Border BorderBrush="{StaticResource ToolbarBorderBrush}" BorderThickness="0,0,0,1" Padding="0,4,0,8" Margin="0,0,0,8">
+                                        <Grid>
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="&#xE70D;" FontFamily="Segoe MDL2 Assets" FontSize="10" Foreground="#555555" VerticalAlignment="Center" Margin="0,0,6,0" />
+                                                <TextBlock Text="Last hour" FontSize="12" Foreground="#555555" VerticalAlignment="Center" />
+                                            </StackPanel>
+                                            <Button Width="20" Height="20" Background="Transparent" BorderThickness="0"
+                                                    Content="&#xE8BB;" FontFamily="Segoe MDL2 Assets" FontSize="8"
+                                                    Foreground="#767676" HorizontalAlignment="Right"
+                                                    ToolTip="Remove group" Click="ClearHistory_Click" />
+                                        </Grid>
+                                    </Border>
+
+                                    <!-- History Items List -->
+                                    <ItemsControl x:Name="HistoryItemsList">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Button Background="Transparent" BorderThickness="0" HorizontalContentAlignment="Stretch"
+                                                        Padding="4,6" Margin="0,1" Cursor="Hand" Click="HistoryItem_Click">
+                                                    <Button.Template>
+                                                        <ControlTemplate TargetType="Button">
+                                                            <Border x:Name="Bd" Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}">
+                                                                <ContentPresenter />
+                                                            </Border>
+                                                            <ControlTemplate.Triggers>
+                                                                <Trigger Property="IsMouseOver" Value="True">
+                                                                    <Setter TargetName="Bd" Property="Background" Value="#E5E5E5" />
+                                                                </Trigger>
+                                                            </ControlTemplate.Triggers>
+                                                        </ControlTemplate>
+                                                    </Button.Template>
+                                                    <Grid>
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="24" />
+                                                            <ColumnDefinition Width="*" />
+                                                            <ColumnDefinition Width="Auto" />
+                                                        </Grid.ColumnDefinitions>
+
+                                                        <!-- Favicon -->
+                                                        <Image Grid.Column="0" Source="{Binding Favicon}" Width="16" Height="16"
+                                                               VerticalAlignment="Top" Margin="0,2,0,0" Stretch="Uniform" />
+
+                                                        <!-- Title & URL -->
+                                                        <StackPanel Grid.Column="1" Margin="4,0,8,0">
+                                                            <TextBlock Text="{Binding DisplayTitle}" FontSize="12" FontWeight="SemiBold"
+                                                                       Foreground="#000000" TextTrimming="CharacterEllipsis" />
+                                                            <TextBlock Text="{Binding Url}" FontSize="11" Foreground="#767676"
+                                                                       TextTrimming="CharacterEllipsis" Margin="0,2,0,0" />
+                                                        </StackPanel>
+
+                                                        <!-- Time -->
+                                                        <TextBlock Grid.Column="2" Text="{Binding TimeFormatted}" FontSize="11"
+                                                                   Foreground="#767676" VerticalAlignment="Top" Margin="0,2,0,0" />
+                                                    </Grid>
+                                                </Button>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </ScrollViewer>
+                        </Grid>
+
+                        <!-- 2. DOWNLOADS VIEW matching downloads tab.png -->
+                        <Grid x:Name="HubDownloadsView" Visibility="Collapsed" Margin="14,12">
+                            <Grid.RenderTransform>
+                                <TranslateTransform x:Name="HubDownloadsTranslate" X="0" />
+                            </Grid.RenderTransform>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" /> <!-- DOWNLOADS header & Open folder -->
+                                <RowDefinition Height="*" />    <!-- Active & Past downloads -->
+                            </Grid.RowDefinitions>
+
+                            <Grid Grid.Row="0" Margin="0,0,0,14">
+                                <TextBlock x:Name="HubDownloadsHeader" Text="DOWNLOADS" FontWeight="Bold" FontSize="13" Foreground="#000000" VerticalAlignment="Center" />
+                                <Button Style="{StaticResource EdgeLinkButtonStyle}" Content="Open folder"
+                                        HorizontalAlignment="Right" Click="OpenDownloadsFolder_Click" />
+                            </Grid>
+
+                            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                                <StackPanel>
+                                    <!-- Active Downloads List -->
+                                    <ItemsControl x:Name="ActiveDownloadsList">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border BorderBrush="{StaticResource ToolbarBorderBrush}" BorderThickness="0,0,0,1" Padding="0,6,0,10" Margin="0,0,0,8">
+                                                    <StackPanel>
+                                                        <Grid>
+                                                            <StackPanel Margin="0,0,32,0">
+                                                                <TextBlock Text="{Binding FileName}" FontSize="13" Foreground="#000000" TextTrimming="CharacterEllipsis" />
+                                                                <TextBlock Text="{Binding Domain}" FontSize="11" Foreground="#767676" Margin="0,2,0,6" />
+                                                            </StackPanel>
+                                                            <Button Width="24" Height="24" Background="Transparent" BorderThickness="0"
+                                                                    ToolTip="Pause / Resume" Click="ActiveDownloadPauseResume_Click"
+                                                                    Foreground="#000000" HorizontalAlignment="Right" VerticalAlignment="Top">
+                                                                <TextBlock FontFamily="Segoe MDL2 Assets" FontSize="11">
+                                                                    <TextBlock.Style>
+                                                                        <Style TargetType="TextBlock">
+                                                                            <Setter Property="Text" Value="&#xE768;" />
+                                                                            <Style.Triggers>
+                                                                                <DataTrigger Binding="{Binding IsPaused}" Value="True">
+                                                                                    <Setter Property="Text" Value="&#xE769;" />
+                                                                                </DataTrigger>
+                                                                            </Style.Triggers>
+                                                                        </Style>
+                                                                    </TextBlock.Style>
+                                                                </TextBlock>
+                                                            </Button>
+                                                        </Grid>
+
+                                                        <!-- Progress Bar (Blue / Gray) -->
+                                                        <ProgressBar Height="4" Background="#D0D0D0" Foreground="{StaticResource AccentBrush}"
+                                                                     BorderThickness="0" Value="{Binding PercentComplete}" Maximum="100" Margin="0,0,0,6" />
+
+                                                        <Grid>
+                                                             <TextBlock Text="{Binding StatusText}" FontSize="11" Foreground="#767676" />
+                                                             <Button Style="{StaticResource EdgeLinkButtonStyle}" Content="Cancel"
+                                                                     HorizontalAlignment="Left" Margin="0,16,0,0" FontSize="11"
+                                                                     Click="ActiveDownloadCancel_Click" />
+                                                        </Grid>
+                                                    </StackPanel>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+
+                                    <!-- Past Downloads Header -->
+                                    <Grid Margin="0,8,0,8">
+                                         <TextBlock Text="Past Downloads" FontSize="12" Foreground="#555555" VerticalAlignment="Center" />
+                                         <Button Style="{StaticResource EdgeLinkButtonStyle}" Content="Clear all"
+                                                 HorizontalAlignment="Right" Click="ClearDownloads_Click" />
+                                    </Grid>
+
+                                    <!-- Past Downloads List -->
+                                    <ItemsControl x:Name="PastDownloadsList">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Grid Margin="0,4">
+                                                    <Button Background="Transparent" BorderThickness="0" HorizontalContentAlignment="Stretch"
+                                                            Padding="0,2,24,2" Cursor="Hand" Click="OpenDownloadedFile_Click" ToolTip="Open file">
+                                                        <Button.Template>
+                                                            <ControlTemplate TargetType="Button">
+                                                                <Border x:Name="Bd" Background="Transparent" Padding="{TemplateBinding Padding}">
+                                                                    <ContentPresenter />
+                                                                </Border>
+                                                                <ControlTemplate.Triggers>
+                                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                                        <Setter TargetName="Bd" Property="Background" Value="#E5E5E5" />
+                                                                    </Trigger>
+                                                                </ControlTemplate.Triggers>
+                                                            </ControlTemplate>
+                                                        </Button.Template>
+                                                        <StackPanel>
+                                                            <TextBlock Text="{Binding FileName}" FontSize="12" Foreground="#000000" TextTrimming="CharacterEllipsis" />
+                                                            <TextBlock Text="{Binding Domain}" FontSize="11" Foreground="#767676" Margin="0,2,0,0" />
+                                                        </StackPanel>
+                                                    </Button>
+                                                    <Button Width="20" Height="20" Background="Transparent" BorderThickness="0"
+                                                            Content="&#xE8BB;" FontFamily="Segoe MDL2 Assets" FontSize="8"
+                                                            Foreground="#767676" HorizontalAlignment="Right" VerticalAlignment="Center"
+                                                            ToolTip="Remove" Click="RemovePastDownload_Click" />
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </ScrollViewer>
+                        </Grid>
+
+                        <!-- 3. FAVORITES VIEW -->
+                        <Grid x:Name="HubFavoritesView" Visibility="Collapsed" Margin="14,12">
+                            <Grid.RenderTransform>
+                                <TranslateTransform x:Name="HubFavoritesTranslate" X="0" />
+                            </Grid.RenderTransform>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                            </Grid.RowDefinitions>
+                            <TextBlock x:Name="HubFavHeader" Grid.Row="0" Text="FAVORITES" FontWeight="Bold" FontSize="13" Foreground="#000000" Margin="0,0,0,14" />
+                            <TextBlock Grid.Row="1" Text="No favorites saved yet. Bookmark pages to access them quickly here."
+                                       Foreground="#767676" FontSize="12" TextWrapping="Wrap" />
+                        </Grid>
+
+                        <!-- 4. READING LIST VIEW -->
+                        <Grid x:Name="HubReadingView" Visibility="Collapsed" Margin="14,12">
+                            <Grid.RenderTransform>
+                                <TranslateTransform x:Name="HubReadingTranslate" X="0" />
+                            </Grid.RenderTransform>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                            </Grid.RowDefinitions>
+                            <TextBlock x:Name="HubReadingHeader" Grid.Row="0" Text="READING LIST" FontWeight="Bold" FontSize="13" Foreground="#000000" Margin="0,0,0,14" />
+                            <TextBlock Grid.Row="1" Text="Save articles to read later when you're offline."
+                                       Foreground="#767676" FontSize="12" TextWrapping="Wrap" />
+                        </Grid>
+
+                        <!-- 5. EXTENSIONS VIEW -->
+                        <Grid x:Name="HubExtensionsView" Visibility="Collapsed" Margin="14,12">
+                            <Grid.RenderTransform>
+                                <TranslateTransform x:Name="HubExtensionsTranslate" X="0" />
+                            </Grid.RenderTransform>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" /> <!-- Header & Store link -->
+                                <RowDefinition Height="*" />    <!-- Extensions List -->
+                            </Grid.RowDefinitions>
+
+                            <Grid Grid.Row="0" Margin="0,0,0,14">
+                                <TextBlock x:Name="HubExtensionsHeader" Text="EXTENSIONS" FontWeight="Bold" FontSize="13" Foreground="#000000" VerticalAlignment="Center" />
+                                <Button Style="{StaticResource EdgeLinkButtonStyle}" Content="Get extensions"
+                                        HorizontalAlignment="Right" Click="OpenWebStore_Click" />
+                            </Grid>
+
+                            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                                <StackPanel>
+                                    <!-- Banner / Link to Chrome Web Store matching Windows 10 / Edge style -->
+                                    <Border Background="#F0F0F0" BorderBrush="{StaticResource ToolbarBorderBrush}" BorderThickness="1" Padding="12" Margin="0,0,0,16">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="32" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0" Text="&#xEA86;" FontFamily="Segoe MDL2 Assets" FontSize="20" Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center" />
+                                            <StackPanel Grid.Column="1" Margin="8,0,0,0">
+                                                <TextBlock Text="Find new extensions" FontSize="13" FontWeight="SemiBold" Foreground="#000000" />
+                                                <TextBlock Text="Explore the Chrome Web Store to personalize and add features to Zenith." FontSize="11" Foreground="#555555" TextWrapping="Wrap" Margin="0,2,0,8" />
+                                                <Button Style="{StaticResource EdgeLinkButtonStyle}" Content="Open Chrome Web Store" FontSize="12" Click="OpenWebStore_Click" HorizontalAlignment="Left" />
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+
+                                    <!-- Installed / Available Extensions list -->
+                                    <TextBlock Text="Installed extensions" FontSize="12" FontWeight="SemiBold" Foreground="#555555" Margin="0,0,0,8" />
+
+                                    <!-- Extension Item 1: AdBlock -->
+                                    <Border BorderBrush="{StaticResource ToolbarBorderBrush}" BorderThickness="0,0,0,1" Padding="0,8,0,10" Margin="0,0,0,4">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="28" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0" Text="&#xE730;" FontFamily="Segoe MDL2 Assets" FontSize="16" Foreground="#D13438" VerticalAlignment="Top" Margin="0,2,0,0" />
+                                            <StackPanel Grid.Column="1" Margin="4,0,8,0">
+                                                <TextBlock Text="Zenith AdBlocker" FontSize="12" FontWeight="SemiBold" Foreground="#000000" />
+                                                <TextBlock Text="Blocks intrusive popups and trackers" FontSize="11" Foreground="#767676" Margin="0,2,0,0" />
+                                            </StackPanel>
+                                            <CheckBox Grid.Column="2" IsChecked="True" VerticalAlignment="Center" ToolTip="Enable / Disable extension" />
+                                        </Grid>
+                                    </Border>
+
+                                    <!-- Extension Item 2: Dark Reader -->
+                                    <Border BorderBrush="{StaticResource ToolbarBorderBrush}" BorderThickness="0,0,0,1" Padding="0,8,0,10" Margin="0,0,0,4">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="28" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0" Text="&#xE708;" FontFamily="Segoe MDL2 Assets" FontSize="16" Foreground="#FF8C00" VerticalAlignment="Top" Margin="0,2,0,0" />
+                                            <StackPanel Grid.Column="1" Margin="4,0,8,0">
+                                                <TextBlock Text="Dark Reader" FontSize="12" FontWeight="SemiBold" Foreground="#000000" />
+                                                <TextBlock Text="Inverts brightness for comfortable night browsing" FontSize="11" Foreground="#767676" Margin="0,2,0,0" />
+                                            </StackPanel>
+                                            <CheckBox Grid.Column="2" IsChecked="False" VerticalAlignment="Center" ToolTip="Enable / Disable extension" />
+                                        </Grid>
+                                    </Border>
+
+                                    <!-- Extension Item 3: Translator -->
+                                    <Border BorderBrush="{StaticResource ToolbarBorderBrush}" BorderThickness="0,0,0,1" Padding="0,8,0,10" Margin="0,0,0,4">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="28" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0" Text="&#xF2B7;" FontFamily="Segoe MDL2 Assets" FontSize="16" Foreground="#0078D7" VerticalAlignment="Top" Margin="0,2,0,0" />
+                                            <StackPanel Grid.Column="1" Margin="4,0,8,0">
+                                                <TextBlock Text="Translator" FontSize="12" FontWeight="SemiBold" Foreground="#000000" />
+                                                <TextBlock Text="Translate foreign web pages instantly" FontSize="11" Foreground="#767676" Margin="0,2,0,0" />
+                                            </StackPanel>
+                                            <CheckBox Grid.Column="2" IsChecked="True" VerticalAlignment="Center" ToolTip="Enable / Disable extension" />
+                                        </Grid>
+                                    </Border>
+
+                                    <!-- Extension Item 4: Password Manager -->
+                                    <Border BorderBrush="{StaticResource ToolbarBorderBrush}" BorderThickness="0,0,0,1" Padding="0,8,0,10" Margin="0,0,0,4">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="28" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0" Text="&#xE72E;" FontFamily="Segoe MDL2 Assets" FontSize="16" Foreground="#107C41" VerticalAlignment="Top" Margin="0,2,0,0" />
+                                            <StackPanel Grid.Column="1" Margin="4,0,8,0">
+                                                <TextBlock Text="Secure Passwords" FontSize="12" FontWeight="SemiBold" Foreground="#000000" />
+                                                <TextBlock Text="Autofill and save website credentials" FontSize="11" Foreground="#767676" Margin="0,2,0,0" />
+                                            </StackPanel>
+                                            <CheckBox Grid.Column="2" IsChecked="True" VerticalAlignment="Center" ToolTip="Enable / Disable extension" />
+                                        </Grid>
+                                    </Border>
+                                </StackPanel>
+                            </ScrollViewer>
+                        </Grid>
+                    </Grid>
+                </Grid>
+            </Border>
+
+            <!-- ── SETTINGS SIDE PANE matching settings.png ── -->
+            <Border x:Name="SettingsPane"
+                    Grid.Column="0"
+                    Grid.ColumnSpan="2"
+                    HorizontalAlignment="Right"
+                    Panel.ZIndex="100"
+                    Width="330"
+                    Background="{StaticResource SidePaneBg}"
+                    BorderBrush="{StaticResource ToolbarBorderBrush}"
+                    BorderThickness="1,0,0,0"
+                    Visibility="Collapsed">
+                <Border.RenderTransform>
+                    <TranslateTransform x:Name="SettingsPaneTranslate" X="330" />
+                </Border.RenderTransform>
+                <Border.Effect>
+                    <DropShadowEffect x:Name="SettingsShadow" BlurRadius="14" Direction="270" ShadowDepth="2" Opacity="0.2" Color="#000000" />
+                </Border.Effect>
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="42" />  <!-- SETTINGS header & Pin -->
+                        <RowDefinition Height="*" />   <!-- Settings options -->
+                    </Grid.RowDefinitions>
+
+                    <!-- Header -->
+                    <Border Grid.Row="0" BorderBrush="{StaticResource ToolbarBorderBrush}" BorderThickness="0,0,0,1" Padding="14,0">
+                        <Grid VerticalAlignment="Center">
+                            <TextBlock x:Name="SettingsTitle" Text="SETTINGS" FontWeight="Bold" FontSize="13" Foreground="#000000" VerticalAlignment="Center" />
+                            <Button x:Name="BtnPinSettings" Style="{StaticResource NavButtonStyle}" Width="36" Height="36"
+                                    HorizontalAlignment="Right" ToolTip="Pin pane"
+                                    Click="PinSettings_Click">
+                                <TextBlock x:Name="PinSettingsIcon" Text="&#xE718;" FontFamily="Segoe MDL2 Assets" FontSize="13" Foreground="#555555" />
+                            </Button>
+                        </Grid>
+                    </Border>
+
+                    <!-- Scrollable Settings List matching settings.png -->
+                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" x:Name="SettingsScrollViewer"
+                                  Loaded="Settings_Loaded">
+                        <StackPanel Margin="14,14,14,24">
+
+                            <!-- ═══ General ═══════════════════════════════════ -->
+                            <TextBlock x:Name="SettingsGeneralHeader" Text="General" FontWeight="SemiBold" FontSize="15" Foreground="#000000" Margin="0,0,0,10" />
+
+                            <!-- Open with -->
+                            <TextBlock x:Name="SettingsOpenWithLabel" Text="Open with" FontSize="12" Foreground="#000000" Margin="0,0,0,8" />
+                            <RadioButton x:Name="OpenWithStartPage" Content="Start page" GroupName="OpenWith" Margin="0,0,0,6" Checked="OpenWith_Changed" />
+                            <RadioButton x:Name="OpenWithNewTab"    Content="New tab page" GroupName="OpenWith" Margin="0,0,0,6" Checked="OpenWith_Changed" />
+                            <RadioButton x:Name="OpenWithPrevious" Content="Previous pages" GroupName="OpenWith" Margin="0,0,0,6" Checked="OpenWith_Changed" />
+                            <RadioButton x:Name="OpenWithSpecific" Content="A specific page or pages" GroupName="OpenWith" Margin="0,0,0,6" Checked="OpenWith_Changed" />
+                            <StackPanel x:Name="HomepagePanel" Visibility="Collapsed" Margin="16,4,0,14" Orientation="Horizontal">
+                                <TextBox x:Name="HomepageBox" Width="190" Height="26" FontSize="12" VerticalContentAlignment="Center"
+                                         LostFocus="HomepageBox_LostFocus" />
+                                <Button Content="Use current page" Style="{StaticResource EdgeGrayButtonStyle}"
+                                        Margin="8,0,0,0" Click="UseCurrentPage_Click" />
+                            </StackPanel>
+                            <Separator Margin="0,8,0,16" Background="#E0E0E0" />
+
+                            <!-- Search engine -->
+                            <TextBlock x:Name="SettingsSearchWithLabel" Text="Search in the address bar with" FontSize="12" Foreground="#000000" Margin="0,0,0,6" />
+                            <ComboBox x:Name="SearchEngineCombo" Height="28" Margin="0,0,0,20"
+                                      SelectionChanged="SearchEngine_Changed">
+                                <ComboBoxItem Content="Google" />
+                                <ComboBoxItem Content="Bing" />
+                                <ComboBoxItem Content="DuckDuckGo" />
+                            </ComboBox>
+
+                            <!-- ═══ Appearance ════════════════════════════════ -->
+                            <TextBlock x:Name="SettingsAppearanceHeader" Text="Appearance" FontWeight="SemiBold" FontSize="15" Foreground="#000000" Margin="0,0,0,10" />
+
+                            <!-- Show the favorites bar -->
+                            <TextBlock x:Name="SettingsShowFavBarLabel" Text="Show the favorites bar" FontSize="12" Foreground="#000000" Margin="0,0,0,6" />
+                            <CheckBox x:Name="FavoritesBarCheck" Content="Show favorites bar"
+                                      FontSize="12" Margin="0,0,0,20"
+                                      Checked="FavoritesBar_Changed" Unchecked="FavoritesBar_Changed" />
+
+                            <!-- ═══ Privacy &amp; Data ═══════════════════════ -->
+                            <TextBlock x:Name="SettingsPrivacyHeader" Text="Privacy &amp; data" FontWeight="SemiBold" FontSize="15" Foreground="#000000" Margin="0,0,0,10" />
+
+                            <!-- Clear browsing data -->
+                            <TextBlock x:Name="SettingsClearDataLabel" Text="Clear browsing data" FontSize="12" Foreground="#000000" Margin="0,0,0,8" />
+                            <Button Style="{StaticResource EdgeGrayButtonStyle}" Content="Choose what to clear"
+                                    HorizontalAlignment="Left" Margin="0,0,0,8" Click="ClearHistory_Click" />
+                            <TextBlock x:Name="ClearDataStatus" Text="" FontSize="11" Foreground="#0078D7"
+                                       Margin="0,0,0,20" Visibility="Collapsed" />
+
+                            <!-- ═══ Reading ════════════════════════════════════ -->
+                            <TextBlock x:Name="SettingsReadingHeader" Text="Reading" FontWeight="SemiBold" FontSize="15" Foreground="#000000" Margin="0,0,0,10" />
+                            <TextBlock x:Name="SettingsReadingStyleLabel" Text="Reading view style" FontSize="12" Foreground="#000000" Margin="0,0,0,6" />
+                            <ComboBox SelectedIndex="0" Height="28" Margin="0,0,0,14">
+                                <ComboBoxItem Content="Default" />
+                            </ComboBox>
+
+                            <TextBlock x:Name="SettingsReadingFontLabel" Text="Reading view font size" FontSize="12" Foreground="#000000" Margin="0,0,0,6" />
+                            <ComboBox SelectedIndex="1" Height="28" Margin="0,0,0,24">
+                                <ComboBoxItem Content="Small" />
+                                <ComboBoxItem Content="Medium" />
+                                <ComboBoxItem Content="Large" />
+                            </ComboBox>
+
+                            <!-- ═══ Language ══════════════════════════════════════ -->
+                            <TextBlock x:Name="SettingsLanguageHeader" Text="Language" FontWeight="SemiBold" FontSize="15" Foreground="#000000" Margin="0,0,0,10" />
+                            <TextBlock x:Name="SettingsLanguageLabel" Text="Display language" FontSize="12" Foreground="#000000" Margin="0,0,0,6" />
+                            <ComboBox x:Name="LanguageCombo" Height="28" Margin="0,0,0,24"
+                                      SelectionChanged="Language_Changed" />
+
+                            <!-- ═══ AdBlock ═══════════════════════════════════════ -->
+                            <TextBlock x:Name="SettingsAdBlockHeader" Text="Ad blocking" FontWeight="SemiBold" FontSize="15" Foreground="#000000" Margin="0,0,0,10" />
+                            <CheckBox x:Name="AdBlockCheck" FontSize="12" Margin="0,0,0,6"
+                                      Checked="AdBlock_Changed" Unchecked="AdBlock_Changed">
+                                <TextBlock x:Name="AdBlockLabel" Text="Built-in ad blocker" />
+                            </CheckBox>
+                            <TextBlock x:Name="AdBlockStatus" Text="Enabled — blocking ads and trackers"
+                                       FontSize="11" Foreground="#767676" Margin="0,0,0,6" />
+                            <TextBlock x:Name="AdBlockCount" Text=""
+                                       FontSize="11" Foreground="#0078D7" Margin="0,0,0,8" />
+                            <Button x:Name="BtnUpdateFilters" Style="{StaticResource EdgeGrayButtonStyle}"
+                                    Content="Update filter list" HorizontalAlignment="Left"
+                                    Margin="0,0,0,24" Click="UpdateAdBlockFilters_Click" />
+
+                            <!-- ═══ About ════════════════════════════════════ -->
+                            <TextBlock x:Name="SettingsAboutHeader" Text="About this app" FontWeight="SemiBold" FontSize="15" Foreground="#000000" Margin="0,0,0,8" />
+                            <TextBlock Text="Zenith Browser" FontSize="13" FontWeight="SemiBold" Foreground="#000000" />
+                            <TextBlock Text="Windows 10 Build 1507 Spartan/Edge Edition" FontSize="11" Foreground="#555555" Margin="0,2,0,0" />
+                            <TextBlock Text="Version 1.0 (Build 10240.1507)" FontSize="11" Foreground="#767676" Margin="0,2,0,0" />
+                            <TextBlock x:Name="AboutCefText" Text="Powered by Chromium Embedded Framework" FontSize="11" Foreground="#767676" Margin="0,2,0,8" />
+                            <Button Style="{StaticResource EdgeLinkButtonStyle}" Content="View Zenith license"
+                                    HorizontalAlignment="Left" Margin="0,0,0,4" Click="ViewLicense_Click" />
+                        </StackPanel>
+                    </ScrollViewer>
+                </Grid>
+            </Border>
+
+            <!-- ── Edge 1507 More (...) Settings Dropdown Overlay (unrolls downward) ── -->
+            <Border x:Name="MoreMenuContainer"
+                    Grid.Column="0"
+                    Grid.ColumnSpan="2"
+                    HorizontalAlignment="Right"
+                    VerticalAlignment="Top"
+                    Width="320"
+                    Margin="0,0,1,0"
+                    ClipToBounds="True"
+                    Visibility="Collapsed"
+                    Panel.ZIndex="300">
+                <Border.Effect>
+                    <DropShadowEffect BlurRadius="12" Direction="270" ShadowDepth="3" Opacity="0.22" Color="#000000" />
+                </Border.Effect>
+                <Border x:Name="MoreMenuBorder"
+                        Background="#F2F2F2"
+                        BorderBrush="#707070"
+                        BorderThickness="1,0,1,1"
+                        CornerRadius="0"
+                        SnapsToDevicePixels="True">
+                    <StackPanel>
+                        <MenuItem x:Name="MenuNewWindow" Header="New window" Style="{StaticResource EdgeMenuItemStyle}" Click="OnMoreMenuItemClick" Tag="NewWindow" />
+                        <MenuItem x:Name="MenuNewInPrivate" Header="New InPrivate window" Style="{StaticResource EdgeMenuItemStyle}" Click="OnMoreMenuItemClick" Tag="NewInPrivate" />
+                        <Separator Background="#D0D0D0" Margin="14,2" />
+
+                        <!-- Zoom Item matching dropdown.png: [ Zoom    —  100%  + ] -->
+                        <MenuItem Style="{StaticResource EdgeMenuItemStyle}" StaysOpenOnClick="True">
+                            <MenuItem.Header>
+                                <Grid Width="285">
+                                    <TextBlock Text="Zoom" VerticalAlignment="Center" />
+                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                        <Button Width="32" Height="28" Background="Transparent" BorderThickness="0"
+                                                Content="—" FontSize="12" FontFamily="Segoe UI" Click="ZoomOut_Click" />
+                                        <TextBlock x:Name="ZoomText" Text="100%" Width="46" TextAlignment="Center" VerticalAlignment="Center" />
+                                        <Button Width="32" Height="28" Background="Transparent" BorderThickness="0"
+                                                Content="+" FontSize="15" FontFamily="Segoe UI" Click="ZoomIn_Click" />
+                                    </StackPanel>
+                                </Grid>
+                            </MenuItem.Header>
+                        </MenuItem>
+
+                        <Separator Background="#D0D0D0" Margin="14,2" />
+                        <MenuItem x:Name="MenuFindOnPage" Header="Find on page" Style="{StaticResource EdgeMenuItemStyle}" Click="OnMoreMenuItemClick" Tag="FindOnPage" />
+                        <MenuItem x:Name="MenuPrint" Header="Print" Style="{StaticResource EdgeMenuItemStyle}" Click="OnMoreMenuItemClick" Tag="Print" />
+                        <MenuItem x:Name="MenuPinToStart" Header="Pin to Start" Style="{StaticResource EdgeMenuItemStyle}" Click="OnMoreMenuItemClick" Tag="PinToStart" />
+                        <MenuItem x:Name="MenuDevTools" Header="F12 Developer Tools" Style="{StaticResource EdgeMenuItemStyle}" Click="OnMoreMenuItemClick" Tag="DevTools" />
+                        <MenuItem Header="Open with Internet Explorer" Style="{StaticResource EdgeMenuItemStyle}" IsEnabled="False" />
+                        <MenuItem x:Name="MenuFeedback" Header="Send feedback" Style="{StaticResource EdgeMenuItemStyle}" Click="OnMoreMenuItemClick" Tag="Feedback" />
+                        <MenuItem x:Name="MenuSettings" Header="Settings" Style="{StaticResource EdgeMenuItemStyle}" Click="OnMoreMenuItemClick" Tag="Settings" />
+                    </StackPanel>
+                </Border>
+            </Border>
+        </Grid>
+
+        <!-- ════════════════════════════════════════════════════════
+             ROW 4 — Status Bar (Height 22px)
+        ════════════════════════════════════════════════════════ -->
+        <Border Grid.Row="4"
+                Background="{StaticResource StatusBarBg}"
+                BorderBrush="{StaticResource ToolbarBorderBrush}"
+                BorderThickness="0,1,0,0"
+                Padding="8,2">
+            <TextBlock x:Name="StatusText"
+                       Text="{Binding SelectedTab.StatusText}"
+                       FontSize="11"
+                       Foreground="{StaticResource TextSecondary}"
+                       VerticalAlignment="Center"
+                       TextTrimming="CharacterEllipsis" />
+        </Border>
+    </Grid>
+    </Border>
+</Window>
