@@ -31,7 +31,7 @@ public static class SettingsService
     public static string OpenWith { get; set; } = "NewTab";
 
     /// <summary>Default search engine: "Google" | "Bing" | "DuckDuckGo"</summary>
-    public static string SearchEngine { get; set; } = "Google";
+    public static string SearchEngine { get; set; } = "DuckDuckGo";
 
     /// <summary>Whether the Favorites bar is visible.</summary>
     public static bool ShowFavoritesBar { get; set; } = false;

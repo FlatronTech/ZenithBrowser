@@ -10,13 +10,23 @@ public static class StartPageService
 
     public static string GetStartPageHtml()
     {
-        return """
+        string searchBaseUrl = SettingsService.SearchEngine switch
+        {
+            "Bing" => "https://www.bing.com/search?q=",
+            "Google" => "https://www.google.com/search?q=",
+            _ => "https://duckduckgo.com/?q="
+        };
+
+        string greeting = LangService.T("addressbar.placeholder");
+        string placeholder = LangService.T("addressbar.search_placeholder");
+
+        string html = """
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>New tab</title>
+    <title>__START_PAGE_TITLE__</title>
     <style>
         * {
             box-sizing: border-box;
@@ -193,7 +203,7 @@ public static class StartPageService
 
     <div class="center-container">
         <!-- "Where to next?" -->
-        <h1 class="greeting">Where to next?</h1>
+        <h1 class="greeting">__GREETING__</h1>
 
         <!-- Search Bar matching startpage.png -->
         <form class="search-container" onsubmit="handleSearch(event)">
@@ -205,7 +215,7 @@ public static class StartPageService
             <input type="text"
                    id="searchInput"
                    class="search-input"
-                   placeholder="Search or enter web address"
+                   placeholder="__PLACEHOLDER__"
                    autocomplete="off" />
             <button type="submit" class="submit-btn" title="Search">
                 <svg viewBox="0 0 24 24">
@@ -243,7 +253,7 @@ public static class StartPageService
             } else if (input.includes('.') && !input.includes(' ')) {
                 url = 'https://' + input;
             } else {
-                url = 'https://www.google.com/search?q=' + encodeURIComponent(input);
+                url = '__SEARCH_URL__' + encodeURIComponent(input);
             }
             window.location.href = url;
             return false;
@@ -252,5 +262,10 @@ public static class StartPageService
 </body>
 </html>
 """;
+        return html
+            .Replace("__START_PAGE_TITLE__", LangService.T("tab.newtab"))
+            .Replace("__GREETING__", greeting)
+            .Replace("__PLACEHOLDER__", placeholder)
+            .Replace("__SEARCH_URL__", searchBaseUrl);
     }
 }

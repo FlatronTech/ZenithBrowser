@@ -39,6 +39,11 @@ public static class ZenithAdBlockService
         "googleadservices.com", "googlesyndication.com", "doubleclick.net",
         "google-analytics.com", "googletagmanager.com", "googletagservices.com",
         "adservice.google.com", "pagead2.googlesyndication.com",
+        "ad.doubleclick.net",
+        "static.doubleclick.net",
+        "googleads.g.doubleclick.net",
+        "imasdk.googleapis.com",     // YouTube IMA SDK (reklamy)
+        "www.youtube.com/api/stats/ads",  // (obsłużone przez URL pattern)
         // Facebook/Meta tracking
         "connect.facebook.net", "graph.facebook.com", "analytics.facebook.com",
         "pixel.facebook.com",
@@ -106,6 +111,12 @@ public static class ZenithAdBlockService
         if (!IsEnabled) return false;
         if (string.IsNullOrEmpty(url)) return false;
 
+        // YouTube-specific: block ad-related URL patterns
+        if (url.Contains("youtube.com") || url.Contains("googlevideo.com"))
+        {
+            return ShouldBlockYouTubeRequest(url);
+        }
+
         try
         {
             var uri = new Uri(url);
@@ -148,6 +159,47 @@ public static class ZenithAdBlockService
             }
         }
         catch { /* invalid URL — don't block */ }
+
+        return false;
+    }
+
+
+    private static bool ShouldBlockYouTubeRequest(string url)
+    {
+        if (!IsEnabled) return false;
+
+        // Konkretne ścieżki/parametry związane z reklamami YT
+        var ytAdPatterns = new[]
+        {
+            "/api/stats/ads",
+            "/ptracking",
+            "/pagead/",
+            "/youtubei/v1/log_event",
+            "/get_video_info",
+            "ad_simple_compiled",
+            "/api/stats/qoe?adformat=",
+        };
+
+        foreach (var pattern in ytAdPatterns)
+        {
+            if (url.Contains(pattern, StringComparison.OrdinalIgnoreCase))
+            {
+                Interlocked.Increment(ref _blockedCount);
+                BlockedCountChanged?.Invoke();
+                return true;
+            }
+        }
+
+        // googlevideo.com – blokuj tylko strumienie reklamowe (ctier=A lub oad=)
+        if (url.Contains("googlevideo.com", StringComparison.OrdinalIgnoreCase))
+        {
+            if (url.Contains("ctier=A") || url.Contains("&oad=") || url.Contains("oad=1"))
+            {
+                Interlocked.Increment(ref _blockedCount);
+                BlockedCountChanged?.Invoke();
+                return true;
+            }
+        }
 
         return false;
     }
