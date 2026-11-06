@@ -1,3 +1,4 @@
+using System.Windows;
 using CefSharp;
 using CefSharp.Enums;
 using CefSharp.Structs;
@@ -41,7 +42,14 @@ public class ZenithDisplayHandler : IDisplayHandler
 
     public void OnTitleChanged(IWebBrowser chromiumWebBrowser, TitleChangedEventArgs titleChangedArgs) { }
 
-    public void OnFullscreenModeChange(IWebBrowser chromiumWebBrowser, IBrowser browser, bool fullscreen) { }
+    public void OnFullscreenModeChange(IWebBrowser chromiumWebBrowser, IBrowser browser, bool fullscreen)
+    {
+        Application.Current.Dispatcher.InvokeAsync(() =>
+        {
+            if (Application.Current.MainWindow is not MainWindow win) return;
+            win.HandleFullscreen(fullscreen);
+        });
+    }
 
     public void OnLoadingProgressChange(IWebBrowser chromiumWebBrowser, IBrowser browser, double progress) { }
 
