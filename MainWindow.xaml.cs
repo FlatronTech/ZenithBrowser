@@ -73,12 +73,24 @@ public partial class MainWindow : Window
 		HistoryItemsList.ItemsSource = HistoryService.Items;
 		ActiveDownloadsList.ItemsSource = DownloadsService.ActiveDownloads;
 		PastDownloadsList.ItemsSource = DownloadsService.PastDownloads;
+		UpdateFavoritesHubList();
+		FavoritesService.FavoritesChanged += () =>
+		{
+			Dispatcher.InvokeAsync(() =>
+			{
+				UpdateFavoriteStar(ViewModel.SelectedTab?.Url);
+				UpdateFavoritesHubList();
+			});
+		};
 		DownloadsService.DownloadStarted += OnDownloadStarted;
 		DownloadsService.DownloadUpdated += OnDownloadUpdated;
 		DownloadsService.DownloadFinished += OnDownloadFinished;
 		DownloadsService.DownloadCancelled += OnDownloadCancelled;
 		Loaded += (object s, RoutedEventArgs e) =>
 		{
+			LangService.LanguageChanged -= ApplyLanguage;
+			LangService.LanguageChanged += ApplyLanguage;
+			ApplyLanguage();
 			OpenInitialTab();
 			ApplyFavoritesBarVisibility();
 		};
@@ -136,6 +148,44 @@ public partial class MainWindow : Window
 			DownloadHandler = new ZenithDownloadHandler(),
 			AudioHandler = new ZenithAudioHandler(tab),
 			RequestHandler = new ZenithRequestHandler(),
+			LifeSpanHandler = new ZenithLifeSpanHandler(
+				tab,
+				targetUrl => ((DispatcherObject)this).Dispatcher.InvokeAsync(() => OpenInNewTab(targetUrl)),
+				closingTab => ((DispatcherObject)this).Dispatcher.InvokeAsync(() => CloseTabWithAnimation(closingTab))
+			),
+		};
+		chromiumWebBrowser.LoadError += (object? s, LoadErrorEventArgs e) =>
+		{
+			// Only handle main frame navigation errors and ignore aborted loads (e.g. user cancelled or redirected)
+			if (!e.Frame.IsMain) return;
+			if (e.ErrorCode == CefErrorCode.Aborted) return;
+
+			string failedUrl = e.FailedUrl ?? "";
+			if (failedUrl.StartsWith("zenith://", StringComparison.OrdinalIgnoreCase)) return;
+
+			// Map CefErrorCode to authentic Edge 1507 Error Page
+			string errorHtm = e.ErrorCode switch
+			{
+				CefErrorCode.NameNotResolved => "dnserror.html",
+				CefErrorCode.InternetDisconnected => "dnserror.html",
+				CefErrorCode.ConnectionRefused => "dnserror.html",
+				CefErrorCode.ConnectionTimedOut => "servbusy.htm",
+				CefErrorCode.ConnectionClosed => "servbusy.htm",
+				CefErrorCode.ConnectionReset => "servbusy.htm",
+				CefErrorCode.SslProtocolError => "tlserror.htm",
+				CefErrorCode.CertAuthorityInvalid => "invalidcert.htm",
+				CefErrorCode.CertCommonNameInvalid => "invalidcert.htm",
+				CefErrorCode.CertDateInvalid => "invalidcert.htm",
+				CefErrorCode.ProxyConnectionFailed => "proxyerror.htm",
+				CefErrorCode.TunnelConnectionFailed => "proxyerror.htm",
+				_ => "dnserror.html"
+			};
+
+			string edgeErrorUrl = $"zenith://error/{errorHtm}#{failedUrl}";
+			((DispatcherObject)this).Dispatcher.InvokeAsync(() =>
+			{
+				chromiumWebBrowser.Load(edgeErrorUrl);
+			});
 		};
 		chromiumWebBrowser.JavascriptMessageReceived += (object? s, JavascriptMessageReceivedEventArgs e) =>
 		{
@@ -155,14 +205,232 @@ public partial class MainWindow : Window
 				case "zenith_audio_pause":
 					tab.IsPlayingAudio = false;
 					break;
+				case "zenith_window_close":
+					CloseTabWithAnimation(tab);
+					break;
 				}
 			}));
 		};
+		chromiumWebBrowser.FrameLoadStart += (object? s, FrameLoadStartEventArgs e) =>
+		{
+			if (e?.Frame?.IsMain == true && ZenithAdBlockService.IsEnabled &&
+				(e.Url?.Contains("youtube.com") == true))
+			{
+				string earlyCSS = @"
+(function() {
+    if (document.getElementById('__zenith_yt_early_css')) return;
+    var s = document.createElement('style');
+    s.id = '__zenith_yt_early_css';
+    s.textContent = '.video-ads,#player-ads,.ytp-ad-module,.ytp-ad-overlay-container,.ytp-ad-text-overlay,.ytp-ad-image-overlay,.ytp-ad-action-interstitial,ytd-display-ad-renderer,ytd-action-companion-ad-renderer,ytd-banner-promo-renderer,ytd-promoted-video-renderer,ytd-compact-promoted-video-renderer,.ytd-ad-slot-renderer,#masthead-ad,ytd-primetime-promo-renderer,ytd-ad-slot-renderer,ytd-in-feed-ad-layout-renderer,#ad-instream-overlay,.ad-container { display:none!important;visibility:hidden!important;height:0!important; }';
+    (document.head || document.documentElement).appendChild(s);
+})();
+";
+				e.Frame.ExecuteJavaScriptAsync(earlyCSS);
+			}
+		};
 		chromiumWebBrowser.FrameLoadEnd += (object? s, FrameLoadEndEventArgs e) =>
 		{
-			if (e.Frame.IsMain && !e.Url.StartsWith("zenith://", StringComparison.OrdinalIgnoreCase))
+			if (e == null || e.Frame == null || !e.Frame.IsValid) return;
+
+			string currentUrl = e.Url ?? "";
+			if (e.Frame.IsMain && !currentUrl.StartsWith("zenith://", StringComparison.OrdinalIgnoreCase))
 			{
+				e.Frame.ExecuteJavaScriptAsync("(function(){ if(window.__zenithWindowCloseHooked)return; window.__zenithWindowCloseHooked=true; try{ window.close=function(){ if(window.CefSharp&&CefSharp.PostMessage){ CefSharp.PostMessage('zenith_window_close'); } }; if(window.self) window.self.close=window.close; }catch(e){} })();");
 				e.Frame.ExecuteJavaScriptAsync("(function() {\r\n                    if (window.__zenithAudioHooked) return;\r\n                    window.__zenithAudioHooked = true;\r\n                    function checkMedia() {\r\n                        var media = document.querySelectorAll('audio, video');\r\n                        var playing = false;\r\n                        for (var i = 0; i < media.length; i++) {\r\n                            var m = media[i];\r\n                            if (!m.paused && !m.ended && m.currentTime > 0 && !m.muted && m.volume > 0) {\r\n                                playing = true;\r\n                                break;\r\n                            }\r\n                        }\r\n                        if (window.CefSharp && CefSharp.PostMessage) {\r\n                            CefSharp.PostMessage(playing ? 'zenith_audio_play' : 'zenith_audio_pause');\r\n                        }\r\n                    }\r\n                    document.addEventListener('play', function() { setTimeout(checkMedia, 150); }, true);\r\n                    document.addEventListener('pause', function() { setTimeout(checkMedia, 150); }, true);\r\n                    document.addEventListener('ended', function() { setTimeout(checkMedia, 150); }, true);\r\n                    document.addEventListener('volumechange', function() { setTimeout(checkMedia, 150); }, true);\r\n                    setInterval(checkMedia, 2000);\r\n                })();");
+
+				if (ZenithAdBlockService.IsEnabled && currentUrl.Contains("youtube.com"))
+				{
+					string ytAdScript = @"
+(function zenithYTAdBlock() {
+    'use strict';
+    if (window.__zenithYTAdBlock) return;
+    window.__zenithYTAdBlock = true;
+
+    // ── 1. Blokada sendBeacon (pinging reklam) ────────────────────────────────────────────
+    var _origBeacon = navigator.sendBeacon ? navigator.sendBeacon.bind(navigator) : null;
+    if (_origBeacon) {
+        navigator.sendBeacon = function(url, data) {
+            if (typeof url === 'string' && (
+                url.includes('/ptracking') ||
+                url.includes('/api/stats/ads') ||
+                url.includes('/api/stats/qoe?adformat') ||
+                url.includes('doubleclick.net') ||
+                url.includes('googleadservices')
+            )) return true;
+            return _origBeacon(url, data);
+        };
+    }
+
+    // ── 2. XHR interception ─────────────────────────────────────────────────────────────────────────────
+    var _origXHROpen = XMLHttpRequest.prototype.open;
+    XMLHttpRequest.prototype.open = function(method, url) {
+        if (typeof url === 'string' && (
+            url.includes('/api/stats/ads') ||
+            url.includes('/ptracking') ||
+            url.includes('/pagead/') ||
+            url.includes('imasdk.googleapis.com') ||
+            url.includes('/get_video_info') ||
+            url.includes('/youtubei/v1/log_event') ||
+            url.includes('doubleclick.net') ||
+            url.includes('googleadservices.com') ||
+            url.includes('/api/ads/') ||
+            url.includes('googlevideo.com/videoplayback') && (url.includes('ctier=A') || url.includes('&oad='))
+        )) {
+            arguments[1] = 'about:invalid';
+        }
+        return _origXHROpen.apply(this, arguments);
+    };
+
+    // ── 3. fetch interception ───────────────────────────────────────────────────────────────────────────────────────────
+    var _origFetch = window.fetch;
+    window.fetch = function(input, init) {
+        var url = typeof input === 'string' ? input : (input && input.url) || '';
+        if (url.includes('/api/stats/ads') ||
+            url.includes('/ptracking') ||
+            url.includes('imasdk.googleapis.com') ||
+            url.includes('doubleclick.net') ||
+            url.includes('/api/ads/') ||
+            url.includes('googleadservices.com')) {
+            return Promise.reject(new Error('zenith-blocked'));
+        }
+        return _origFetch.apply(this, arguments);
+    };
+
+    // ── 4. CSS – ukryj WSZYSTKIE kontenery reklamowe ─────────────────────────────────────────────────
+    function injectCSS() {
+        if (document.getElementById('__zenith_yt_adcss')) return;
+        var style = document.createElement('style');
+        style.id = '__zenith_yt_adcss';
+        style.textContent = [
+            '.video-ads',
+            '#player-ads',
+            '.ytp-ad-module',
+            '.ytp-ad-overlay-container',
+            '.ytp-ad-text-overlay',
+            '.ytp-ad-image-overlay',
+            '.ytp-ad-action-interstitial',
+            '.ytp-ad-skip-button-slot',
+            '.ytp-ad-player-overlay',
+            '.ytp-ad-player-overlay-layout',
+            '.ytp-ad-player-overlay-instream-info',
+            '.ytp-suggested-action',
+            'ytd-display-ad-renderer',
+            'ytd-action-companion-ad-renderer',
+            'ytd-banner-promo-renderer',
+            'ytd-promoted-video-renderer',
+            'ytd-compact-promoted-video-renderer',
+            '.ytd-ad-slot-renderer',
+            '#masthead-ad',
+            'ytd-primetime-promo-renderer',
+            'ytd-statement-banner-renderer',
+            'ytd-ad-slot-renderer',
+            'ytd-in-feed-ad-layout-renderer',
+            'ytd-promoted-sparkles-web-renderer',
+            'tp-yt-paper-dialog[aria-label]',
+            '.ytd-mealbar-promo-renderer',
+            'ytm-promoted-sparkles-web-renderer',
+            'ytm-companion-ad-renderer',
+            '.ad-container',
+            '.ad-showing .ytp-chrome-bottom',
+            '#ad-instream-overlay',
+            '.ytp-ad-visit-advertiser-button',
+            '.ytp-ce-element',
+            '#cinematics'
+        ].join(', ') + ' { display: none !important; visibility: hidden !important; height: 0 !important; max-height: 0 !important; pointer-events: none !important; }';
+        (document.head || document.documentElement).appendChild(style);
+    }
+    injectCSS();
+
+    // ── 5. Funkcja skip + seek (failsafe) ──────────────────────────────────────────────────────────────────────────────────────
+    function skipAd() {
+        injectCSS();
+        // Skip button
+        var skipSelectors = [
+            '.ytp-skip-ad-button',
+            '.ytp-ad-skip-button',
+            '.ytp-ad-skip-button-modern',
+            '.ytp-ad-overlay-close-button',
+            '.videoAdUiSkipButton',
+            '.ytp-ad-skip-button-slot button'
+        ];
+        for (var i = 0; i < skipSelectors.length; i++) {
+            var btn = document.querySelector(skipSelectors[i]);
+            if (btn && btn.offsetParent !== null) { btn.click(); return; }
+        }
+
+        // Seek do końca jeśli reklama jest w playerze
+        var video = document.querySelector('video.html5-main-video, video');
+        var adOverlay = document.querySelector('.ad-showing');
+        if (video && adOverlay) {
+            if (video.duration && !isNaN(video.duration) && isFinite(video.duration)) {
+                video.muted = true;
+                video.currentTime = video.duration - 0.01;
+                video.muted = false;
+                try { video.play(); } catch(e2) {}
+            }
+        }
+
+        // Ukryj inline overlay reklamy
+        var adSelectors = [
+            '.ytp-ad-overlay-container',
+            '.ytp-ad-text-overlay',
+            '.ytp-ad-image-overlay',
+            '.ytp-ad-action-interstitial',
+            '.ad-container',
+            '#masthead-ad',
+            'ytd-banner-promo-renderer',
+            '.ytd-ad-slot-renderer',
+            'ytd-promoted-video-renderer',
+            'ytd-compact-promoted-video-renderer',
+            '.ytd-compact-promoted-item-renderer',
+            'ytd-in-feed-ad-layout-renderer',
+            '#player-ads',
+            '.video-ads'
+        ];
+        for (var j = 0; j < adSelectors.length; j++) {
+            var els = document.querySelectorAll(adSelectors[j]);
+            for (var k = 0; k < els.length; k++) {
+                els[k].style.setProperty('display', 'none', 'important');
+            }
+        }
+    }
+
+    // ── 6. MutationObserver + interval ────────────────────────────────────────────────────────────────────────────────────
+    skipAd();
+    clearInterval(window._zenithAdInterval);
+    window._zenithAdInterval = setInterval(skipAd, 250);
+
+    var obs = new MutationObserver(function(mutations) {
+        for (var m = 0; m < mutations.length; m++) {
+            if (mutations[m].addedNodes.length > 0) { skipAd(); break; }
+        }
+    });
+    obs.observe(document.documentElement || document.body, { childList: true, subtree: true });
+
+    // ── 7. YouTube SPA navigation ─────────────────────────────────────────────────────────────────────────────────────────────────
+    window.addEventListener('yt-navigate-finish', function() {
+        window.__zenithYTAdBlock = false;
+        setTimeout(function() {
+            window.__zenithYTAdBlock = true;
+            skipAd();
+        }, 100);
+        setTimeout(skipAd, 400);
+        setTimeout(skipAd, 900);
+        setTimeout(skipAd, 2000);
+    });
+    window.addEventListener('yt-page-data-updated', function() {
+        setTimeout(skipAd, 300);
+    });
+
+    // ── 8. yt-player ad intercept ──────────────────────────────────────────────────────────────────────────────────────────
+    document.addEventListener('yt-ad-impression', function(e) {
+        e.stopImmediatePropagation();
+        setTimeout(skipAd, 50);
+    }, true);
+})();
+";
+					e.Frame.ExecuteJavaScriptAsync(ytAdScript);
+				}
 			}
 		};
 		chromiumWebBrowser.AddressChanged += (object s, DependencyPropertyChangedEventArgs e) =>
@@ -179,6 +447,7 @@ public partial class MainWindow : Window
 					AddressBox.Text = tab.DisplayUrl;
 					UpdateSecurityIcon(tab);
 					UpdateAddressBarVisibility(tab);
+					UpdateFavoriteStar(newAddress);
 				}
 				if (!string.IsNullOrEmpty(newAddress) && !newAddress.StartsWith("zenith://", StringComparison.OrdinalIgnoreCase) && newAddress != "about:blank")
 				{
@@ -203,11 +472,11 @@ public partial class MainWindow : Window
 				string text = (e.NewValue as string) ?? "";
 				if (tab.Url.StartsWith("zenith://", StringComparison.OrdinalIgnoreCase))
 				{
-					tab.Title = "New tab";
+					tab.Title = LangService.T("tab.newtab");
 				}
 				else
 				{
-					tab.Title = (string.IsNullOrWhiteSpace(text) ? "New tab" : text);
+					tab.Title = (string.IsNullOrWhiteSpace(text) ? LangService.T("tab.newtab") : text);
 				}
 			}));
 		};
@@ -305,6 +574,7 @@ public partial class MainWindow : Window
 		UpdateSecurityIcon(tab);
 		UpdateAddressBarVisibility(tab);
 		UpdateSecurityDetailsAsync(tab.Url);
+		UpdateFavoriteStar(tab.Url);
 	}
 
 	private void UpdateAddressBarVisibility(BrowserTab tab)
@@ -566,6 +836,16 @@ public partial class MainWindow : Window
 		}
 	}
 
+	public void OpenInNewTab(string url)
+	{
+		BrowserTab tab = ViewModel.NewTab(url);
+		SwitchToBrowser(tab);
+		((DispatcherObject)this).Dispatcher.InvokeAsync((Action)(() =>
+		{
+			AnimateNewTabOpen();
+		}), (DispatcherPriority)6);
+	}
+
 	private void NewTab_Click(object sender, RoutedEventArgs e)
 	{
 		BrowserTab tab = ViewModel.NewTab();
@@ -611,6 +891,11 @@ public partial class MainWindow : Window
 	private void CloseTabWithAnimation(BrowserTab tab)
 	{
 		int num = ViewModel.Tabs.IndexOf(tab);
+		if (_browsers.TryGetValue(tab.Id, out ChromiumWebBrowser? browserToRemove))
+		{
+			_browsers.Remove(tab.Id);
+			try { browserToRemove.Dispose(); } catch { }
+		}
 		if (num < 0)
 		{
 			ViewModel.CloseTab(tab);
@@ -701,7 +986,7 @@ public partial class MainWindow : Window
 			{
 				value.Load("zenith://newtab");
 				ViewModel.SelectedTab.Url = "zenith://newtab";
-				ViewModel.SelectedTab.Title = "New tab";
+				ViewModel.SelectedTab.Title = LangService.T("tab.newtab");
 				ViewModel.SelectedTab.Favicon = null;
 				AddressBox.Text = "";
 			}
@@ -1031,11 +1316,115 @@ public partial class MainWindow : Window
 		}
 	}
 
+
+	// ══════════════════════════════════════════════════════════════════════
+	// Extension toggle handlers (Hub > Extensions tab)
+	// ══════════════════════════════════════════════════════════════════════
+
+	private void SyncExtensionCheckboxes()
+	{
+		if (ExtAdBlockCheck != null) ExtAdBlockCheck.IsChecked = ZenithExtensionService.AdBlockerEnabled;
+	}
+
+	private void ExtAdBlock_Changed(object sender, RoutedEventArgs e)
+	{
+		if (ExtAdBlockCheck == null) return;
+		bool enabled = ExtAdBlockCheck.IsChecked == true;
+		ZenithExtensionService.AdBlockerEnabled = enabled;
+		// Keep settings pane checkbox in sync
+		if (AdBlockCheck != null) AdBlockCheck.IsChecked = enabled;
+		SettingsService.AdBlockEnabled = enabled;
+		SettingsService.Save();
+		UpdateAdBlockStatusText();
+	}
+
+
+
+
 	private void HistoryItem_Click(object sender, RoutedEventArgs e)
 	{
 		if (sender is Button { DataContext: HistoryItem dataContext } && ViewModel.SelectedTab != null && _browsers.TryGetValue(ViewModel.SelectedTab.Id, out ChromiumWebBrowser value))
 		{
 			value.Load(dataContext.Url);
+		}
+	}
+
+	// ══════════════════════════════════════════════════════════════════════
+	// Favorites handlers
+	// ══════════════════════════════════════════════════════════════════════
+
+	private void UpdateFavoriteStar(string? url)
+	{
+		if (FavoriteStarIcon == null || BtnFavorite == null) return;
+
+		if (string.IsNullOrEmpty(url) || url.StartsWith("zenith://", StringComparison.OrdinalIgnoreCase) || url == "about:blank")
+		{
+			BtnFavorite.Visibility = Visibility.Collapsed;
+			if (BtnReadingView != null) BtnReadingView.Visibility = Visibility.Collapsed;
+			return;
+		}
+
+		BtnFavorite.Visibility = Visibility.Visible;
+		if (BtnReadingView != null) BtnReadingView.Visibility = Visibility.Visible;
+
+		bool isFav = FavoritesService.IsFavorite(url);
+		if (isFav)
+		{
+			FavoriteStarIcon.Text = "\ue735"; // filled star
+			FavoriteStarIcon.Foreground = new SolidColorBrush(Color.FromRgb(255, 185, 0)); // Yellow / Gold (#FFB900)
+			BtnFavorite.ToolTip = "Remove from favorites (Ctrl+D)";
+		}
+		else
+		{
+			FavoriteStarIcon.Text = "\ue734"; // outline star
+			FavoriteStarIcon.Foreground = new SolidColorBrush(Color.FromRgb(85, 85, 85)); // Neutral gray (#555555)
+			BtnFavorite.ToolTip = "Add to favorites (Ctrl+D)";
+		}
+	}
+
+	private void BtnFavorite_Click(object sender, RoutedEventArgs e)
+	{
+		var tab = ViewModel.SelectedTab;
+		if (tab == null || string.IsNullOrEmpty(tab.Url) || tab.Url.StartsWith("zenith://", StringComparison.OrdinalIgnoreCase) || tab.Url == "about:blank")
+			return;
+
+		FavoritesService.ToggleFavorite(tab.Title, tab.Url, tab.Favicon);
+		UpdateFavoriteStar(tab.Url);
+		UpdateFavoritesHubList();
+	}
+
+	private void BtnReadingView_Click(object sender, RoutedEventArgs e)
+	{
+		// Reading view toggle
+	}
+
+	private void FavoriteItem_Click(object sender, RoutedEventArgs e)
+	{
+		if (sender is Button { DataContext: FavoriteItem item } && ViewModel.SelectedTab != null && _browsers.TryGetValue(ViewModel.SelectedTab.Id, out ChromiumWebBrowser browser))
+		{
+			browser.Load(item.Url);
+		}
+	}
+
+	private void DeleteFavorite_Click(object sender, RoutedEventArgs e)
+	{
+		if (sender is Button { DataContext: FavoriteItem item })
+		{
+			FavoritesService.RemoveFavorite(item.Url);
+			UpdateFavoriteStar(ViewModel.SelectedTab?.Url);
+			UpdateFavoritesHubList();
+			e.Handled = true;
+		}
+	}
+
+	private void UpdateFavoritesHubList()
+	{
+		if (HubFavoritesList == null) return;
+		HubFavoritesList.ItemsSource = null;
+		HubFavoritesList.ItemsSource = FavoritesService.Items;
+		if (HubFavEmptyText != null)
+		{
+			HubFavEmptyText.Visibility = FavoritesService.Items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
 		}
 	}
 
@@ -1048,12 +1437,14 @@ public partial class MainWindow : Window
 	private void Settings_Loaded(object sender, System.Windows.RoutedEventArgs e)
 	{
 		// Search engine
+		_suppressSearchEngineChanged = true;
 		switch (SettingsService.SearchEngine)
 		{
 			case "Bing":       SearchEngineCombo.SelectedIndex = 1; break;
 			case "DuckDuckGo": SearchEngineCombo.SelectedIndex = 2; break;
 			default:           SearchEngineCombo.SelectedIndex = 0; break;
 		}
+		_suppressSearchEngineChanged = false;
 
 		// Open with
 		switch (SettingsService.OpenWith)
@@ -1078,6 +1469,9 @@ public partial class MainWindow : Window
 		ZenithAdBlockService.BlockedCountChanged -= OnBlockedCountChanged;
 		ZenithAdBlockService.BlockedCountChanged += OnBlockedCountChanged;
 		UpdateAdBlockStatusText();
+
+		// Sync extension checkboxes
+		SyncExtensionCheckboxes();
 
 		// Language combo
 		LangService.LanguageChanged -= ApplyLanguage;
@@ -1135,8 +1529,16 @@ public partial class MainWindow : Window
 		if (_suppressSearchEngineChanged) return;
 		if (SearchEngineCombo?.SelectedItem is System.Windows.Controls.ComboBoxItem item)
 		{
-			SettingsService.SearchEngine = item.Content?.ToString() ?? "Google";
+			SettingsService.SearchEngine = item.Content?.ToString() ?? "DuckDuckGo";
 			SettingsService.Save();
+
+			// Reload active startpage if currently open
+			var tab = ViewModel?.SelectedTab;
+			if (tab != null && tab.Url.StartsWith("zenith://", StringComparison.OrdinalIgnoreCase))
+			{
+				var browser = GetActiveWebBrowser();
+				browser?.Reload();
+			}
 		}
 	}
 
@@ -1206,7 +1608,7 @@ public partial class MainWindow : Window
 
 	private void ViewLicense_Click(object sender, System.Windows.RoutedEventArgs e)
 	{
-		var newTab = ViewModel.NewTab("https://github.com/");
+		var newTab = ViewModel.NewTab("https://raw.githubusercontent.com/FlatronTech/ZenithBrowser/refs/heads/main/LICENSE");
 		SwitchToBrowser(newTab);
 	}
 	// ─── Language System ────────────────────────────────────────────────────────
@@ -1276,8 +1678,16 @@ public partial class MainWindow : Window
 		if (BtnUpdateFilters != null)      BtnUpdateFilters.Content   = LangService.T("settings.adblock.update");
 		UpdateAdBlockStatusText();
 
-		// ── Settings sections — About ─────────────────────────────────────────────
-		if (SettingsAboutHeader != null)        SettingsAboutHeader.Text        = LangService.T("settings.section.about");
+		// ── Settings sections — About (hardcoded in code, not in JSON) ───────────
+		bool isPl = string.Equals(LangService.CurrentCode, "pl", StringComparison.OrdinalIgnoreCase);
+		if (SettingsAboutHeader != null) SettingsAboutHeader.Text = isPl ? "O tej aplikacji" : "About this app";
+		if (AboutAppNameText != null)    AboutAppNameText.Text    = isPl ? "Zenith" : "Zenith";
+		if (AboutEditionText != null)    AboutEditionText.Visibility = Visibility.Collapsed;
+		if (AboutVersionText != null)    AboutVersionText.Text    = isPl ? "Wersja 1.0 (2026116109)" : "Version 1.0 (2026116109)";
+		if (AboutCefText != null)        AboutCefText.Text        = isPl
+			? $"Oparte na CefSharp {CefSharp.Cef.CefVersion} / Chromium {CefSharp.Cef.ChromiumVersion}"
+			: $"Powered by CefSharp {CefSharp.Cef.CefVersion} / Chromium {CefSharp.Cef.ChromiumVersion}";
+		if (BtnViewLicense != null)      BtnViewLicense.Content   = isPl ? "Wyświetl licencję Zenith" : "View Zenith license";
 
 		// ── Hub pane headers ─────────────────────────────────────────────────────
 		if (HubFavHeader != null)               HubFavHeader.Text               = LangService.T("hub.favorites");
@@ -1296,14 +1706,146 @@ public partial class MainWindow : Window
 		if (MenuFeedback != null)               MenuFeedback.Header             = LangService.T("menu.send_feedback");
 		if (MenuSettings != null)               MenuSettings.Header             = LangService.T("menu.settings");
 
-		// ── New tab titles ────────────────────────────────────────────────────────
+		// Navigation & window controls tooltips
+		if (BtnNewTab != null)                  BtnNewTab.ToolTip               = LangService.T("tab.newtab_tooltip");
+		if (BtnMinimize != null)                BtnMinimize.ToolTip             = LangService.T("window.minimize");
+		if (BtnMaximize != null)                BtnMaximize.ToolTip             = LangService.T("window.maximize");
+		if (BtnClose != null)                   BtnClose.ToolTip                = LangService.T("window.close");
+
+		if (BtnBack != null)                    BtnBack.ToolTip                 = LangService.T("nav.back");
+		if (BtnForward != null)                 BtnForward.ToolTip              = LangService.T("nav.forward");
+		if (BtnRefresh != null)
+		{
+			var selTab = ViewModel?.SelectedTab;
+			BtnRefresh.ToolTip = (selTab != null && selTab.IsLoading)
+				? LangService.T("nav.stop")
+				: LangService.T("nav.refresh");
+		}
+		if (BtnSecurity != null)                BtnSecurity.ToolTip             = LangService.T("nav.security_tooltip");
+		if (BtnHub != null)                     BtnHub.ToolTip                  = LangService.T("nav.hub_tooltip");
+		if (BtnWebNote != null)                 BtnWebNote.ToolTip              = LangService.T("nav.webnote_tooltip");
+		if (BtnShare != null)                   BtnShare.ToolTip                = LangService.T("nav.share_tooltip");
+		if (BtnMore != null)                    BtnMore.ToolTip                 = LangService.T("nav.more_tooltip");
+		if (BtnPinHub != null)                  BtnPinHub.ToolTip               = LangService.T("hub.pin");
+
+		// Hub navigation buttons tooltips
+		if (TabHubFavorites != null)            TabHubFavorites.ToolTip         = LangService.T("hub.tab.favorites");
+		if (TabHubReading != null)              TabHubReading.ToolTip           = LangService.T("hub.tab.reading");
+		if (TabHubHistory != null)              TabHubHistory.ToolTip           = LangService.T("hub.tab.history");
+		if (TabHubDownloads != null)            TabHubDownloads.ToolTip         = LangService.T("hub.tab.downloads");
+		if (TabHubExtensions != null)           TabHubExtensions.ToolTip        = LangService.T("hub.tab.extensions");
+
+		// Favorites bar placeholder text
+		if (FavBarEmpty != null)                FavBarEmpty.Text                = LangService.T("favbar.empty");
+
+		// Address bar placeholder text
+		if (AddressPlaceholderText != null)     AddressPlaceholderText.Text     = LangService.T("addressbar.search_placeholder");
+
+		// New tab titles
 		foreach (var tab in ViewModel?.Tabs ?? Enumerable.Empty<Zenith.App.Models.BrowserTab>())
 		{
-			if (tab.Url?.StartsWith("zenith://", StringComparison.OrdinalIgnoreCase) == true)
+			if (tab.Url?.StartsWith("zenith://", StringComparison.OrdinalIgnoreCase) == true || string.IsNullOrEmpty(tab.Url) || tab.Url == "about:blank")
 				tab.Title = LangService.T("tab.newtab");
 		}
 	}
 
+
+
+	// ══════════════════════════════════════════════════════════════════════
+	// Fullscreen support
+	// ══════════════════════════════════════════════════════════════════════
+
+	private WindowStyle _prevWindowStyle;
+	private WindowState _prevWindowState;
+	private double _prevLeft, _prevTop, _prevWidth, _prevHeight;
+	private bool _isFullscreen = false;
+
+	[StructLayout(LayoutKind.Sequential)]
+	private struct RECT
+	{
+		public int Left;
+		public int Top;
+		public int Right;
+		public int Bottom;
+	}
+
+	[StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
+	private class MONITORINFO
+	{
+		public int cbSize = Marshal.SizeOf(typeof(MONITORINFO));
+		public RECT rcMonitor;
+		public RECT rcWork;
+		public int dwFlags;
+	}
+
+	[DllImport("user32.dll")]
+	private static extern IntPtr MonitorFromWindow(IntPtr hwnd, uint dwFlags);
+
+	[DllImport("user32.dll", CharSet = CharSet.Auto)]
+	private static extern bool GetMonitorInfo(IntPtr hMonitor, MONITORINFO lpmi);
+
+	private const uint MONITOR_DEFAULTTONEAREST = 0x00000002;
+
+	public void HandleFullscreen(bool enterFullscreen)
+	{
+		if (enterFullscreen == _isFullscreen) return;
+		_isFullscreen = enterFullscreen;
+
+		if (enterFullscreen)
+		{
+			// Zapisz stan okna
+			_prevWindowStyle = WindowStyle;
+			_prevWindowState = WindowState;
+			_prevLeft   = Left;
+			_prevTop    = Top;
+			_prevWidth  = Width;
+			_prevHeight = Height;
+
+			IntPtr handle = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+			IntPtr monitor = MonitorFromWindow(handle, MONITOR_DEFAULTTONEAREST);
+			var mi = new MONITORINFO();
+			GetMonitorInfo(monitor, mi);
+
+			// Ukryj pasek zadań i ramki okna
+			WindowStyle = WindowStyle.None;
+			WindowState = WindowState.Normal;
+			ResizeMode  = ResizeMode.NoResize;
+
+			Left   = mi.rcMonitor.Left;
+			Top    = mi.rcMonitor.Top;
+			Width  = mi.rcMonitor.Right - mi.rcMonitor.Left;
+			Height = mi.rcMonitor.Bottom - mi.rcMonitor.Top;
+
+			// Ukryj pasek kart i toolbar
+			if (RootGrid != null)
+			{
+				RootGrid.RowDefinitions[0].Height = new GridLength(0); // tab bar
+				RootGrid.RowDefinitions[1].Height = new GridLength(0); // toolbar
+				RootGrid.RowDefinitions[2].Height = new GridLength(0); // favorites bar
+			}
+		}
+		else
+		{
+			// Przywróć stan okna
+			WindowStyle = _prevWindowStyle;
+			ResizeMode  = ResizeMode.CanResize;
+			Left   = _prevLeft;
+			Top    = _prevTop;
+			Width  = _prevWidth;
+			Height = _prevHeight;
+			WindowState = _prevWindowState;
+
+			// Przywróć paski
+			if (RootGrid != null)
+			{
+				RootGrid.RowDefinitions[0].Height = new GridLength(32);  // tab bar
+				RootGrid.RowDefinitions[1].Height = new GridLength(48);  // toolbar
+				RootGrid.RowDefinitions[2].Height = SettingsService.ShowFavoritesBar
+					? new GridLength(32)
+					: new GridLength(0);
+			}
+		}
+	}
 
 	private void ClearHistory_Click(object sender, RoutedEventArgs e)
 	{
@@ -1753,7 +2295,7 @@ public partial class MainWindow : Window
 
 	private void Feedback_Click(object sender, RoutedEventArgs e)
 	{
-		MessageBox.Show("Thank you for testing Zenith Browser (Windows 10 1507 Edge edition)!", "Feedback", MessageBoxButton.OK, MessageBoxImage.Asterisk);
+		MessageBox.Show("Thank you for testing Zenith!", "Feedback", MessageBoxButton.OK, MessageBoxImage.Asterisk);
 	}
 
 	private void BtnWebNote_Click(object sender, RoutedEventArgs e)
@@ -1768,7 +2310,12 @@ public partial class MainWindow : Window
 
 	private void Window_KeyDown(object sender, KeyEventArgs e)
 	{
-		if (e.Key == Key.T && Keyboard.Modifiers == ModifierKeys.Control)
+		if (e.Key == Key.D && Keyboard.Modifiers == ModifierKeys.Control)
+		{
+			BtnFavorite_Click(sender, e);
+			e.Handled = true;
+		}
+		else if (e.Key == Key.T && Keyboard.Modifiers == ModifierKeys.Control)
 		{
 			NewTab_Click(sender, e);
 			e.Handled = true;
